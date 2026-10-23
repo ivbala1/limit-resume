@@ -53,6 +53,30 @@ the mod on their own; in a session that is already open, send
 All open sessions that hit the limit continue at once after the reset; there
 is no queue.
 
+## Compared with the built-in setting
+
+Claude Code has its own setting, `autoContinueAtUsageLimit` ("Continue
+automatically at usage limit"): when a usage limit stops the session, it waits
+for the reset and continues the task. If that is all you need, use it. The mod
+adds:
+
+- **Every session, not just the visible one.** In the author's use of the
+  desktop app with several sessions running at once, only the session open on
+  screen went on after the reset; the others stayed idle until opened. The
+  mod continues each session that hit the limit.
+- **A checkpoint written before the limit.** The goal, what is done, what is
+  left and the next step are saved while there is still budget, and attached to
+  the continuation, so the session picks up from a note rather than from a cut
+  off turn.
+- **It knows when not to continue.** A task marked as waiting for you or
+  finished is left alone, and every continuation starts with "check how the
+  last action ended and do not repeat it".
+- **The budget line.** Usage, reset times and a forecast on every prompt, so
+  Claude can plan the rest of the window before it runs out.
+
+Using the mod together with the built-in setting has not been tested; turn one
+of them off.
+
 ## Settings
 
 Set them with `/plugin configure limit-resume@limit-resume`, or in
