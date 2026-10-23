@@ -1,0 +1,35 @@
+{
+  "name": "limit-resume",
+  "version": "0.7.0",
+  "description": "Resume an interrupted session after its usage limit resets",
+  "author": { "name": "Ivan Balashov" },
+  "license": "MIT",
+  "repository": "https://github.com/ivbala1/limit-resume",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "Language of the mod's messages and of its notes to Claude",
+      "options": ["en", "ru"],
+      "default": "en"
+    },
+    "timeZone": {
+      "type": "string",
+      "title": "Time zone",
+      "description": "IANA time zone for clock times, for example Europe/Berlin; empty uses the system zone",
+      "default": ""
+    },
+    "reserveFor": {
+      "type": "string",
+      "title": "Reserve for",
+      "description": "Keep the last part of the limit (from 97% of five hours, 99% of the week) for sessions marked with /limit-resume reserve, named as in 'kept for ...'; empty turns the reserve off",
+      "default": ""
+    },
+    "economyHint": {
+      "type": "string",
+      "title": "Economy hint",
+      "description": "Extra advice added to the budget rule when the limit may run out before the reset",
+      "default": ""
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "description": "Wait for a usage-limit reset in the current session",
+  "modules": ["./register.js"]
+}

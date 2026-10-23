@@ -1,0 +1,17 @@
+{
+  "name": "limit-resume",
+  "owner": {
+    "name": "Ivan Balashov"
+  },
+  "metadata": {
+    "description": "Continue a Claude Code session by itself after the usage limit resets"
+  },
+  "plugins": [
+    {
+      "name": "limit-resume",
+      "source": "./",
+      "description": "Checkpoint before the usage limit and continue the interrupted session after the reset",
+      "version": "0.7.0"
+    }
+  ]
+}
