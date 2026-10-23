@@ -55,7 +55,8 @@ is no queue.
 
 ## Settings
 
-Set them in `/config` under the plugin, or in `settings.json`:
+Set them with `/plugin configure limit-resume@limit-resume`, or in
+`settings.json`; unset options keep the defaults below:
 
 ```json
 {
