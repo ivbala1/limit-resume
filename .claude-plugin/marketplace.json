@@ -11,7 +11,7 @@
       "name": "limit-resume",
       "source": "./",
       "description": "Checkpoint before the usage limit and continue the interrupted session after the reset",
-      "version": "0.7.0"
+      "version": "0.7.1"
     }
   ]
 }

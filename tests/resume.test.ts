@@ -236,6 +236,7 @@ test('parsers preserve midnight, 12am/12pm and named and unknown time zones', RU
   expect(clockTime('25:00', NOW, CFG.zone)).toBe(null);
   expect(textReset(ERROR, NOW, CFG.zone)).toBe(RESET);
   expect(textReset("You've hit your weekly limit · resets 3pm", NOW, CFG.zone)).toBe(null);
+  expect(textReset("You've hit your 5-hour limit · resets 3pm (America/New_York)", NOW, CFG.zone)).toBe(Date.parse('2026-10-14T19:00:00Z'));
   expect(textReset("You've hit your session limit · resets 3pm (America/New_York)", NOW, CFG.zone)).toBe(Date.parse('2026-10-14T19:00:00Z'));
   expect(textReset("You've hit your session limit · resets 3pm (Not/A_Zone)", NOW, CFG.zone)).toBe(null);
   expect(textReset("You've hit your session limit · resets 3pm", NOW, 'Europe/Berlin')).toBe(Date.parse('2026-10-14T13:00:00Z'));

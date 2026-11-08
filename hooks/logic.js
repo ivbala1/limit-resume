@@ -10,7 +10,7 @@ export function isLimitError(text) {
   if (typeof text !== 'string') return false;
   const clean = text.replace(/^Claude Code returned an error result:\s*/i, '')
     .replace(/^API Error:?\s*(?:\d{3}\s*)?/i, '').trim();
-  return /^(?:you['’]ve (?:hit|reached) your (?:session|weekly|usage|opus|sonnet).*limit|you['’]re out of (?:usage credits|extra usage)|(?:out of usage credits|session limit reached|weekly limit reached|usage limit reached)|rate limit reached)/i.test(clean);
+  return /^(?:you['’]ve (?:hit|reached) your (?:session|5-hour|weekly|usage|opus|sonnet).*limit|you['’]re out of (?:usage credits|extra usage)|(?:out of usage credits|session limit reached|weekly limit reached|usage limit reached)|rate limit reached)/i.test(clean);
 }
 
 export function exhaustedReset(limits) {

@@ -2,7 +2,7 @@ import { CHECKPOINT_TOOL, CHECKPOINT_FIELDS, CONTINUATIONS, budgetWindow, budget
 import { resumeText as baseResumeText, GRACE_MS, MAX_ATTEMPTS, MAX_WAIT_MS, isLimitError, exhaustedReset, clockTime, textReset, nextDeadline } from './logic.js';
 import { DEFAULTS, settings, t, timeLabel as zonedLabel } from './config.js';
 
-const VERSION = '0.7.0';
+const VERSION = '0.7.1';
 let cfg = DEFAULTS;
 const say = (key, vars) => t(cfg, key, vars);
 const timeLabel = ms => zonedLabel(ms, cfg);

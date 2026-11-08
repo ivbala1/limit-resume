@@ -43,7 +43,7 @@ test('client-composed SDK command is consumed locally before reaching the model'
   const f = setup(on, { enabled: false, monitor: false });
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false });
   const answer = await $.prompt.submit({ text: '/limit-resume on', wait: false, origin: { kind: 'sdk' } });
-  expect(answer.drop).toContain('0.7.0 загружен');
+  expect(answer.drop).toContain('0.7.1 загружен');
   expect(f.state.submitted).toEqual([]);
   expect(f.data.get('session:budget-session')).toMatchObject({ enabled: true, monitor: true });
 });
@@ -349,7 +349,7 @@ test('defaults: English, no reserve, so 98 percent keeps working and never pause
   await f.clock.advance(700_000);
   expect(f.state.submitted).toEqual([]);
   const status = await $.command.run({ command: 'limit-resume', args: 'status' });
-  expect(status.text).toContain('limit-resume 0.7.0 loaded');
+  expect(status.text).toContain('limit-resume 0.7.1 loaded');
   const mark = await $.command.run({ command: 'limit-resume', args: 'reserve' });
   expect(mark.text).toContain('No reserve is configured');
   expect(f.data.get('session:budget-session').reserved).toBe(false);

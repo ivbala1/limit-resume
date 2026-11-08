@@ -1,6 +1,6 @@
 {
   "name": "limit-resume",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Resume an interrupted session after its usage limit resets",
   "author": { "name": "Ivan Balashov" },
   "license": "MIT",
