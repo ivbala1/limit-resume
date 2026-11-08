@@ -43,7 +43,7 @@ test('client-composed SDK command is consumed locally before reaching the model'
   const f = setup(on, { enabled: false, monitor: false });
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false });
   const answer = await $.prompt.submit({ text: '/limit-resume on', wait: false, origin: { kind: 'sdk' } });
-  expect(answer.drop).toContain('0.7.2 загружен');
+  expect(answer.drop).toContain('0.7.3 загружен');
   expect(f.state.submitted).toEqual([]);
   expect(f.data.get('session:budget-session')).toMatchObject({ enabled: true, monitor: true });
 });
@@ -323,6 +323,14 @@ test('after a reload the mod still owns its submitted continuation', RU, async (
   expect(f.data.get('session:budget-session').attempts).toBe(2);
 });
 
+test('a reload during the continuation\'s own turn still arms on its failure', RU, async ($, on) => {
+  const f = setup(on, { ownSubmission: true, ownTurnStarted: true, attempts: 1 });
+  f.state.limits[0].percentUsed = 100;
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: false });
+  await $.classic.StopFailure({ hook_event_name: 'StopFailure', error: 'rate_limit', last_assistant_message: "You've hit your session limit · resets 2:40am (Asia/Dubai)", session_id: 'budget-session', cwd: '/work', transcript_path: '/work/t.jsonl' });
+  expect(f.data.get('session:budget-session').pending).not.toBe(null);
+});
+
 test('a late drop after the owner wrote does not restart the wait', RU, async ($, on) => {
   const f = setup(on);
   f.state.dropSubmit = true;
@@ -334,6 +342,33 @@ test('a late drop after the owner wrote does not restart the wait', RU, async ($
   await f.clock.advance(3_600_000);
   expect(f.state.submitted.filter(t => t.startsWith('Лимит использования')).length).toBe(1);
   expect(f.data.get('session:budget-session').pending).toBe(null);
+});
+
+test('a late failure event while our continuation waits for its turn does not send a second one', RU, async ($, on) => {
+  const f = setup(on);
+  f.state.limits[0].percentUsed = 100;
+  f.state.submitDelay = 30_000;
+  const fail = () => $.classic.StopFailure({ hook_event_name: 'StopFailure', error: 'rate_limit', last_assistant_message: "You've hit your session limit · resets 2:40am (Asia/Dubai)", session_id: 'budget-session', cwd: '/work', transcript_path: '/work/t.jsonl' });
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: false });
+  await $.turn.start({ turnId: 'main', text: 'Работай' });
+  await fail();
+  // Past the deadline the continuation is submitted and its turn has not started yet.
+  await f.clock.advance(1_275_000);
+  expect(f.state.submitted.length).toBe(1);
+  await fail();
+  await f.clock.advance(3_600_000);
+  expect(f.state.submitted.filter(t => t.startsWith('Лимит использования сбросился')).length).toBe(1);
+  // A late completion of the earlier turn is ignored the same way.
+  await $.turn.complete({ turnId: 'main', answer: "You've hit your session limit · resets 2:40am (Asia/Dubai)", durationMs: 1, isAborted: false, reason: 'error' });
+  expect(f.data.get('session:budget-session')).toMatchObject({ ownSubmission: true, pending: null });
+  // Once the continuation's own turn fails, the mod waits again as usual.
+  await $.turn.start({ turnId: 'resume', text: 'Лимит использования сбросился.' });
+  // A completion of the earlier turn arriving now does not belong to the running one.
+  await $.turn.complete({ turnId: 'main', answer: "You've hit your session limit · resets 2:40am (Asia/Dubai)", durationMs: 1, isAborted: false, reason: 'error' });
+  expect(f.data.get('session:budget-session').pending).toBe(null);
+  f.state.limits[0].resetsAt = new Date(NOW + 5 * 3_600_000 + 1_200_000).toISOString();
+  await fail();
+  expect(f.data.get('session:budget-session').pending).not.toBe(null);
 });
 
 test('defaults: English, no reserve, so 98 percent keeps working and never pauses', async ($, on) => {
@@ -349,7 +384,7 @@ test('defaults: English, no reserve, so 98 percent keeps working and never pause
   await f.clock.advance(700_000);
   expect(f.state.submitted).toEqual([]);
   const status = await $.command.run({ command: 'limit-resume', args: 'status' });
-  expect(status.text).toContain('limit-resume 0.7.2 loaded');
+  expect(status.text).toContain('limit-resume 0.7.3 loaded');
   const mark = await $.command.run({ command: 'limit-resume', args: 'reserve' });
   expect(mark.text).toContain('No reserve is configured');
   expect(f.data.get('session:budget-session').reserved).toBe(false);

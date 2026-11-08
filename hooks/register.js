@@ -2,7 +2,7 @@ import { CHECKPOINT_TOOL, CHECKPOINT_FIELDS, CONTINUATIONS, budgetWindow, budget
 import { resumeText as baseResumeText, GRACE_MS, MAX_ATTEMPTS, MAX_WAIT_MS, isLimitError, exhaustedReset, clockTime, textReset, nextDeadline } from './logic.js';
 import { DEFAULTS, settings, t, timeLabel as zonedLabel } from './config.js';
 
-const VERSION = '0.7.2';
+const VERSION = '0.7.3';
 let cfg = DEFAULTS;
 const say = (key, vars) => t(cfg, key, vars);
 const timeLabel = ms => zonedLabel(ms, cfg);
@@ -17,6 +17,10 @@ let generation = 0;
 let timer = null;
 let firing = false;
 let ownSubmission = false;
+// The turn of our continuation has started: survives a reload in the middle of that turn.
+let ownTurnStarted = false;
+// The main turn now running: a completion of an earlier turn arriving late is not this one.
+let currentTurn = null;
 let lastError = '';
 let status = '';
 let monitor = false;
@@ -43,7 +47,7 @@ function cancelTimer() {
 
 async function save($) {
   if (!sessionId) return;
-  await $.store.set(`session:${sessionId}`, { enabled, optedOut, reserved, paceSamples, ownerTurn, ownSubmission, pending, attempts, monitor, selectedForBackground, warned, checkpoint, pauseAfterTurn, latestBudget });
+  await $.store.set(`session:${sessionId}`, { enabled, optedOut, reserved, paceSamples, ownerTurn, ownSubmission, ownTurnStarted, pending, attempts, monitor, selectedForBackground, warned, checkpoint, pauseAfterTurn, latestBudget });
 }
 
 async function show($, message) {
@@ -76,6 +80,7 @@ async function load($, id) {
   sessionId = id;
   working = false;
   ownSubmission = false;
+  currentTurn = null;
   lastError = '';
   const saved = await $.store.get(`session:${id}`);
   optedOut = saved?.optedOut === true;
@@ -85,6 +90,7 @@ async function load($, id) {
   monitor = enabled;
   // A continuation submitted before a reload is still ours when its turn starts.
   ownSubmission = enabled && saved?.ownSubmission === true;
+  ownTurnStarted = ownSubmission && saved?.ownTurnStarted === true;
   selectedForBackground = saved?.selectedForBackground === true;
   if (enabled && selectedForBackground) interactive = true;
   warned = saved?.warned ?? {};
@@ -149,6 +155,7 @@ async function check($, token) {
   // engine keeps an accepted prompt queued, so a reload does not lose it either.
   cancelTimer();
   ownSubmission = true;
+  ownTurnStarted = false;
   const claim = generation;
   await save($);
   await show($, say('sending', { n: attempts, max: MAX_ATTEMPTS }));
@@ -162,9 +169,9 @@ async function check($, token) {
     accepted = { drop: String(err?.message ?? err) };
   }
   if (accepted && accepted.drop === undefined) return;
-  // The owner may have written or turned the mod off while submit waited.
-  if (claim !== generation || !enabled) return;
+  // Dropped: nothing of ours is queued, even if the owner wrote or turned the mod off meanwhile.
   ownSubmission = false;
+  if (claim !== generation || !enabled) return;
   const reason = String(accepted?.drop ?? '');
   // The owner stopped the session: continuing on our own would override that.
   if (reason.includes('the session was stopped')) {
@@ -185,6 +192,12 @@ async function retryLater($, resetAt, reason, claim) {
   await show($, say('retryAt', { reason, time: timeLabel(pending.deadline) }));
 }
 
+// Our continuation is sent but its turn has not started: an event about an
+// earlier turn arriving now is late, and arming again would send a second continuation.
+function continuationQueued() {
+  return ownSubmission && !ownTurnStarted && !working;
+}
+
 function freshCheckpoint() {
   return Boolean(checkpoint) && checkpoint.turn === ownerTurn;
 }
@@ -199,10 +212,12 @@ function resumeText() {
 
 async function arm($, text, explicit = false, override = null, reserve = false) {
   await ensureSession($);
-  if (!interactive || !enabled || working) return false;
+  if (!interactive || !enabled || working || continuationQueued()) return false;
   if (attempts >= MAX_ATTEMPTS) { await show($, say('attemptsArm')); return false; }
   const now = await $.clock.now();
   const usage = await $.session.usage();
+  // The timer may have sent our continuation, or a turn started, while usage was read.
+  if (working || continuationQueued()) return false;
   const exhausted = exhaustedReset(usage.rateLimits, now);
   // Unknown wording: the engine's own usage at 100% still proves an exhausted window.
   if (!explicit && !isLimitError(text) && exhausted === null) return false;
@@ -236,7 +251,7 @@ async function control($, raw) {
       pauseAfterTurn = false;
       await cancel($, say('off'));
     } else if (args === 'arm' || args.startsWith('at ')) {
-      if (working) return { text: say('busy') };
+      if (working || continuationQueued()) return { text: say('busy') };
       let override = null;
       if (args.startsWith('at ')) {
         const time = args.slice(3).trim();
@@ -315,11 +330,14 @@ export function register(on, options = {}) {
   });
 
   on('classic.StopFailure', async ($, e, next) => {
+    const turn = currentTurn;
     const result = await next(e);
-    if (!e.agent_id && interactive) {
+    // A new turn started while the chain ran: this failure belongs to the earlier one.
+    if (!e.agent_id && interactive && currentTurn === turn) {
+      const late = continuationQueued();
       working = false;
       const text = e.last_assistant_message ?? '';
-      if (['rate_limit', 'billing_error'].includes(e.error)) {
+      if (!late && ['rate_limit', 'billing_error'].includes(e.error)) {
         if (isLimitError(text)) lastError = text;
         await arm($, text);
       }
@@ -338,7 +356,9 @@ export function register(on, options = {}) {
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e);
-    if (e.agentId || !interactive) return result;
+    const stale = e.turnId && currentTurn && e.turnId !== currentTurn;
+    if (e.agentId || !interactive || stale || continuationQueued()) return result;
+    currentTurn = null;
     working = false;
     ownSubmission = false;
     if (e.reason === 'error' && !e.isAborted) {
@@ -392,6 +412,8 @@ export function register(on, options = {}) {
       // Any turn that is not our continuation is new work: a checkpoint saved
       // before it describes an older task.
       if (!ours) ownerTurn += 1;
+      ownTurnStarted = ours;
+      currentTurn = e.turnId ?? null;
       cancelTimer();
       if (!ours) attempts = 0;
       working = true;

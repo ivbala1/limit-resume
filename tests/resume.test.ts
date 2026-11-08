@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing';
 import { settings } from '../hooks/config.js';
 const RU = { options: { language: 'ru', timeZone: 'Asia/Dubai', reserveFor: 'ассистента', economyHint: 'Разведку можно отдать другому агенту.' } };
 const CFG = settings(RU.options);
-import { clockTime, exhaustedReset, isLimitError, textReset, resumeText } from '../hooks/logic.js';
+import { clockTime, exhaustedReset, isLimitError, nextDeadline, textReset, resumeText } from '../hooks/logic.js';
 
 const NOW = Date.parse('2026-10-13T22:20:00Z');
 const RESET = NOW + 120_000;
@@ -244,10 +244,11 @@ test('parsers preserve midnight, 12am/12pm and named and unknown time zones', RU
   expect(clockTime('25:00', NOW, CFG.zone)).toBe(null);
   expect(textReset(ERROR, NOW, CFG.zone)).toBe(RESET);
   expect(textReset("You've hit your weekly limit · resets 3pm", NOW, CFG.zone)).toBe(null);
-  expect(textReset("You've hit your 5-hour limit · resets 3pm (America/New_York)", NOW, CFG.zone)).toBe(Date.parse('2026-10-14T19:00:00Z'));
-  expect(textReset("You've hit your session limit · resets 3pm (America/New_York)", NOW, CFG.zone)).toBe(Date.parse('2026-10-14T19:00:00Z'));
+  // 18:20 in New York: 3pm already passed, a five-hour reset is not 20 hours away.
+  expect(textReset("You've hit your 5-hour limit · resets 3pm (America/New_York)", NOW, CFG.zone)).toBe(Date.parse('2026-10-13T19:00:00Z'));
+  expect(textReset("You've hit your session limit · resets 3pm (America/New_York)", NOW, CFG.zone)).toBe(Date.parse('2026-10-13T19:00:00Z'));
   expect(textReset("You've hit your session limit · resets 3pm (Not/A_Zone)", NOW, CFG.zone)).toBe(null);
-  expect(textReset("You've hit your session limit · resets 3pm", NOW, 'Europe/Berlin')).toBe(Date.parse('2026-10-14T13:00:00Z'));
+  expect(textReset("You've hit your session limit · resets 3pm", NOW, 'Europe/Berlin')).toBe(Date.parse('2026-10-13T13:00:00Z'));
   expect(exhaustedReset([{ kind: 'five_hour', percentUsed: 80, resetsAt: new Date(RESET).toISOString() }])).toBe(null);
 });
 
@@ -263,5 +264,19 @@ test('clock times follow DST: a skipped hour moves past the gap, a repeated hour
 });
 
 test('a zone without a slash in the engine message is honoured', async () => {
-  expect(textReset("You've hit your session limit · resets 3pm (UTC)", NOW, 'Asia/Dubai')).toBe(Date.parse('2026-10-14T15:00:00Z'));
+  expect(textReset("You've hit your session limit · resets 3pm (UTC)", NOW, 'Asia/Dubai')).toBe(Date.parse('2026-10-13T15:00:00Z'));
+});
+
+test('a reset time from the engine that already passed is retried soon, an explicit one waits for tomorrow', async () => {
+  const at = Date.parse('2026-11-08T12:06:00Z'); // 16:06 in Dubai
+  const passed = textReset("You've hit your session limit · resets 4pm (Asia/Dubai)", at, 'Asia/Dubai');
+  expect(passed).toBe(Date.parse('2026-11-08T12:00:00Z'));
+  expect(nextDeadline(passed, at, 0)! - at).toBeLessThanOrEqual(60_000);
+  // 01:00: "11pm" was two hours ago, yesterday; 23:00: "3am" is four hours ahead.
+  expect(textReset("You've hit your session limit · resets 11pm", Date.parse('2026-11-08T21:00:00Z'), 'Asia/Dubai')).toBe(Date.parse('2026-11-08T19:00:00Z'));
+  expect(textReset("You've hit your session limit · resets 3am", Date.parse('2026-11-08T19:00:00Z'), 'Asia/Dubai')).toBe(Date.parse('2026-11-08T23:00:00Z'));
+  expect(clockTime('4pm', at, 'Asia/Dubai')).toBe(Date.parse('2026-11-09T12:00:00Z'));
+  // A daily or model limit can reset almost a day ahead: its time is not taken for a passed one.
+  expect(textReset("You've hit your daily limit · resets 4pm", at, 'Asia/Dubai')).toBe(Date.parse('2026-11-09T12:00:00Z'));
+  expect(textReset('Opus limit reached · resets 4pm', at, 'Asia/Dubai')).toBe(Date.parse('2026-11-09T12:00:00Z'));
 });
