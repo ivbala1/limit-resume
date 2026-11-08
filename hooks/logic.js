@@ -10,13 +10,14 @@ export function isLimitError(text) {
   if (typeof text !== 'string') return false;
   const clean = text.replace(/^Claude Code returned an error result:\s*/i, '')
     .replace(/^API Error:?\s*(?:\d{3}\s*)?/i, '').trim();
-  return /^(?:you['’]ve (?:hit|reached) your (?:session|5-hour|weekly|usage|opus|sonnet).*limit|you['’]re out of (?:usage credits|extra usage)|(?:out of usage credits|session limit reached|weekly limit reached|usage limit reached)|rate limit reached)/i.test(clean);
+  // Wording drifts between releases (session, 5-hour...): match the shape, not a word list.
+  return /^(?![^\n]*\b(?:context|token|output)\b)(?:you(?:['’]ve| have) (?:hit|reached) (?:your|the) [\w‑ -]*limit|you['’]re out of (?:usage credits|extra usage)|out of usage credits|(?:[\w-]+ ){0,2}(?:usage|session|weekly|daily|opus|sonnet|[\w‑-]*hour(?:ly)?|[\w‑-]*day) limit (?:reached|exceeded)|rate limit reached|(?:[\w-]+ ){0,3}limit\s*[·∙|:-]\s*resets?\s+(?:at\s+)?\d)/i.test(clean);
 }
 
-export function exhaustedReset(limits) {
+export function exhaustedReset(limits, now = -Infinity) {
   const resets = (limits ?? []).filter(r =>
     ['five_hour', 'seven_day'].includes(r.kind) && r.percentUsed >= 100
-  ).map(r => Date.parse(r.resetsAt ?? '')).filter(Number.isFinite);
+  ).map(r => Date.parse(r.resetsAt ?? '')).filter(t => Number.isFinite(t) && t > now);
   return resets.length ? Math.max(...resets) : null;
 }
 
@@ -38,12 +39,12 @@ export function clockTime(text, now, zone = DEFAULTS.zone) {
 
 // The engine names the zone of its reset time; without one the configured zone is assumed.
 export function textReset(text, now, zone = DEFAULTS.zone) {
-  if (!isLimitError(text) || /weekly|seven.day/i.test(text)) return null;
+  if (!isLimitError(text) || /week|seven.day|7.?day|7d\b|168/i.test(text)) return null;
   const tokens = [...text.matchAll(/\(([^()\s]+)\)/g)].map(m => m[1]);
   const named = tokens.find(validZone);
   // A zone the runtime does not know: better no time than a wrong one.
   if (!named && tokens.some(x => x.includes('/'))) return null;
-  const match = text.match(/(?:resets?|reset at)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)(?!\w)/i);
+  const match = text.match(/(?:resets?|reset at)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)(?!\w|\s+[a-z])/i);
   return match ? clockTime(match[1], now, named ?? zone) : null;
 }
 

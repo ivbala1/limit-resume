@@ -230,6 +230,14 @@ test('the desktop countdown preserves the existing band and can be cancelled', R
 test('parsers preserve midnight, 12am/12pm and named and unknown time zones', RU, async () => {
   expect(isLimitError('An article says: usage limit reached')).toBe(false);
   expect(isLimitError("API Error: You're out of usage credits")).toBe(true);
+  for (const t of ["You've hit your 5 hour limit · resets 3pm", "You've reached the daily limit", "Five-hour limit reached", "Hourly usage limit · resets at 3:30pm"]) expect(isLimitError(t)).toBe(true);
+  for (const t of ['Rate limit exceeded on tool output', 'The limit of this loop is 10', 'Rate limit exceeded, resets in 30s', 'Context limit reached · /compact or /clear to continue', 'Output token limit reached', 'Server rate limit reached', "You've reached the end of the file; no limit here", 'The GitHub API limit resets at 5pm']) expect(isLimitError(t)).toBe(false);
+  expect(textReset("You've hit your limit for the week · resets 3pm", NOW, CFG.zone)).toBe(null);
+  for (const t of ["You have reached your 5-hour limit", "5-hour limit exceeded", "You've hit your 5‑hour limit · resets 3pm"]) expect(isLimitError(t)).toBe(true);
+  for (const t of ["You've hit your context limit", "You've reached your output token limit", "Output token limit · resets 5pm"]) expect(isLimitError(t)).toBe(false);
+  for (const t of ["You've hit your 168-hour limit · resets 3pm", "You've hit your 7d limit · resets 3pm", "You've hit your session limit · resets 15 Nov at 5pm"]) expect(textReset(t, NOW, CFG.zone)).toBe(null);
+  expect(exhaustedReset([{ kind: 'five_hour', percentUsed: 100, resetsAt: new Date(NOW - 60_000).toISOString() }], NOW)).toBe(null);
+  expect(textReset("You've hit your 7-day limit · resets 3pm", NOW, CFG.zone)).toBe(null);
   expect(clockTime('02:22', NOW, CFG.zone)).toBe(RESET);
   expect(clockTime('12am', NOW, CFG.zone)).toBe(Date.parse('2026-10-14T20:00:00Z'));
   expect(clockTime('12pm', NOW, CFG.zone)).toBe(Date.parse('2026-10-14T08:00:00Z'));

@@ -2,7 +2,7 @@ import { CHECKPOINT_TOOL, CHECKPOINT_FIELDS, CONTINUATIONS, budgetWindow, budget
 import { resumeText as baseResumeText, GRACE_MS, MAX_ATTEMPTS, MAX_WAIT_MS, isLimitError, exhaustedReset, clockTime, textReset, nextDeadline } from './logic.js';
 import { DEFAULTS, settings, t, timeLabel as zonedLabel } from './config.js';
 
-const VERSION = '0.7.1';
+const VERSION = '0.7.2';
 let cfg = DEFAULTS;
 const say = (key, vars) => t(cfg, key, vars);
 const timeLabel = ms => zonedLabel(ms, cfg);
@@ -201,10 +201,12 @@ async function arm($, text, explicit = false, override = null, reserve = false) 
   await ensureSession($);
   if (!interactive || !enabled || working) return false;
   if (attempts >= MAX_ATTEMPTS) { await show($, say('attemptsArm')); return false; }
-  if (!explicit && !isLimitError(text)) return false;
   const now = await $.clock.now();
   const usage = await $.session.usage();
-  const resetAt = override ?? exhaustedReset(usage.rateLimits) ?? textReset(text, now, cfg.zone);
+  const exhausted = exhaustedReset(usage.rateLimits, now);
+  // Unknown wording: the engine's own usage at 100% still proves an exhausted window.
+  if (!explicit && !isLimitError(text) && exhausted === null) return false;
+  const resetAt = override ?? exhausted ?? textReset(text, now, cfg.zone);
   const deadline = nextDeadline(resetAt, now, attempts);
   if (resetAt === null || deadline === null) {
     await show($, say('unknownReset', { zone: cfg.zone }));
@@ -317,8 +319,8 @@ export function register(on, options = {}) {
     if (!e.agent_id && interactive) {
       working = false;
       const text = e.last_assistant_message ?? '';
-      if (['rate_limit', 'billing_error'].includes(e.error) && isLimitError(text)) {
-        lastError = text;
+      if (['rate_limit', 'billing_error'].includes(e.error)) {
+        if (isLimitError(text)) lastError = text;
         await arm($, text);
       }
     }

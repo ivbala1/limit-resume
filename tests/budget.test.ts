@@ -43,7 +43,7 @@ test('client-composed SDK command is consumed locally before reaching the model'
   const f = setup(on, { enabled: false, monitor: false });
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false });
   const answer = await $.prompt.submit({ text: '/limit-resume on', wait: false, origin: { kind: 'sdk' } });
-  expect(answer.drop).toContain('0.7.1 загружен');
+  expect(answer.drop).toContain('0.7.2 загружен');
   expect(f.state.submitted).toEqual([]);
   expect(f.data.get('session:budget-session')).toMatchObject({ enabled: true, monitor: true });
 });
@@ -349,7 +349,7 @@ test('defaults: English, no reserve, so 98 percent keeps working and never pause
   await f.clock.advance(700_000);
   expect(f.state.submitted).toEqual([]);
   const status = await $.command.run({ command: 'limit-resume', args: 'status' });
-  expect(status.text).toContain('limit-resume 0.7.1 loaded');
+  expect(status.text).toContain('limit-resume 0.7.2 loaded');
   const mark = await $.command.run({ command: 'limit-resume', args: 'reserve' });
   expect(mark.text).toContain('No reserve is configured');
   expect(f.data.get('session:budget-session').reserved).toBe(false);
@@ -396,4 +396,39 @@ test('a wait for a reserve that is turned off now continues within a minute', as
   expect(saved.deadline).toBe(NOW + 60_000);
   await f.clock.advance(75_000);
   expect(f.state.submitted.length).toBe(1);
+});
+
+test('an unknown limit wording still arms when the engine reports the window at 100%', RU, async ($, on) => {
+  const f = setup(on);
+  f.state.limits[0].percentUsed = 100;
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: false });
+  await $.turn.start({ turnId: 'main', text: 'Работай' });
+  await $.classic.StopFailure({ hook_event_name: 'StopFailure', error: 'rate_limit', last_assistant_message: 'Quota spent, come back later', session_id: 'budget-session', cwd: '/work', transcript_path: '/work/t.jsonl' });
+  await f.clock.advance(3_600_000);
+  expect(f.state.submitted.filter(t => t.startsWith('Лимит использования сбросился')).length).toBe(1);
+});
+
+test('an unknown wording below 100% is not taken for an exhausted limit', RU, async ($, on) => {
+  const f = setup(on);
+  f.state.limits[0].percentUsed = 80;
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: false });
+  await $.turn.start({ turnId: 'main', text: 'Работай' });
+  await $.classic.StopFailure({ hook_event_name: 'StopFailure', error: 'rate_limit', last_assistant_message: 'Quota spent, come back later', session_id: 'budget-session', cwd: '/work', transcript_path: '/work/t.jsonl' });
+  await f.clock.advance(3_600_000);
+  expect(f.state.submitted).toEqual([]);
+});
+
+test('an error turn with no failure event still arms at 100%, but not on a window that already reset', RU, async ($, on) => {
+  const f = setup(on);
+  f.state.limits = [{ kind: 'five_hour', percentUsed: 100, resetsAt: new Date(NOW - 60_000).toISOString() }];
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: false });
+  await $.turn.start({ turnId: 'main', text: 'Работай' });
+  await $.turn.complete({ turnId: 'main', answer: 'Quota spent, come back later', durationMs: 1, isAborted: false, reason: 'error' });
+  await f.clock.advance(3_600_000);
+  expect(f.state.submitted).toEqual([]);
+  f.state.limits = [{ kind: 'five_hour', percentUsed: 100, resetsAt: new Date(NOW + 3_600_000 + RESET - NOW).toISOString() }];
+  await $.turn.start({ turnId: 'main', text: 'Работай' });
+  await $.turn.complete({ turnId: 'main', answer: 'Quota spent, come back later', durationMs: 1, isAborted: false, reason: 'error' });
+  await f.clock.advance(3_600_000);
+  expect(f.state.submitted.filter(t => t.startsWith('Лимит использования сбросился')).length).toBe(1);
 });
